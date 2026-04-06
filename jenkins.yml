@@ -1,0 +1,77 @@
+---
+- name: Install and Configure Jenkins on CentOS 9
+  hosts: node1
+  become: yes
+
+  vars:
+    jenkins_repo_url: "https://pkg.jenkins.io/redhat-stable/jenkins.repo"
+    jenkins_repo_dest: "/etc/yum.repos.d/jenkins.repo"
+    jenkins_key_url: "https://pkg.jenkins.io/redhat-stable/jenkins.io.key"
+
+  tasks:
+
+    - name: Update all packages
+      dnf:
+        name: "*"
+        state: latest
+
+    - name: Install required dependencies
+      dnf:
+        name:
+          - java-17-openjdk
+          - wget
+          - curl
+        state: present
+
+    - name: Add Jenkins repository
+      get_url:
+        url: "{{ jenkins_repo_url }}"
+        dest: "{{ jenkins_repo_dest }}"
+        mode: '0644'
+
+    - name: Import Jenkins GPG key
+      rpm_key:
+        key: "{{ jenkins_key_url }}"
+        state: present
+
+    - name: Install Jenkins
+      dnf:
+        name: jenkins
+        state: present
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reexec
+
+    - name: Enable and start Jenkins service
+      systemd:
+        name: jenkins
+        enabled: yes
+        state: started
+
+    - name: Open port 8080 in firewall
+      firewalld:
+        port: 8080/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Ensure firewalld is running
+      systemd:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Wait for Jenkins to start
+      wait_for:
+        port: 8080
+        delay: 10
+        timeout: 300
+
+    - name: Get initial Jenkins admin password
+      command: cat /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_password
+      changed_when: false
+
+    - name: Display Jenkins initial admin password
+      debug:
+        msg: "Jenkins initial admin password: {{ jenkins_password.stdout }}"
